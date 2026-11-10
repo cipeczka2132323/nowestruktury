@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forum Bro</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar"><a class="back" id="backBtn" href="index.html" aria-label="Wróć">◀</a><h1>Forum Bro</h1></header>
+<main id="app"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="common.js"></script>
+<script type="module">
+const me = await requireUser();
+const T = new URLSearchParams(location.search).get('t');
+const canDel = row => row.created_by === me.id || me.is_admin;
+const img = u => u ? `<img src="${esc(safeUrl(u))}" alt="" loading="lazy">` : '';
+const postForm = (id, title) => `<form class="card" id="${id}">
+  ${title ? '<h2>Nowy wątek</h2><input name="title" placeholder="Tytuł" required maxlength="150">' : '<h2>Odpowiedz</h2>'}
+  <textarea name="body" placeholder="Treść (linki http:// będą klikalne)" required></textarea>
+  <label class="meta">Zdjęcie (opcjonalnie, max 5 MB): <input type="file" name="image" accept="image/*"></label>
+  <div class="err"></div><button>Wyślij</button></form>`;
+const fileOf = f => { const x = f.get('image'); return x && x.size ? x : null; };
+
+if (!needsDb(app)) T ? await thread() : await list();
+
+async function list() {
+  const rows = check(await sb.from('forum_threads').select('id,title,created_at,author:profiles(nick),forum_posts(count)').order('created_at', { ascending: false }).limit(200));
+  app.innerHTML = postForm('nt', true) + `<div class="card"><h2>Wątki</h2><ul class="list">${rows.map(r => `
+    <li><a href="?t=${r.id}"><b>${esc(r.title)}</b></a><br><span class="meta">${esc(r.author?.nick ?? '—')} · ${fmtDate(r.created_at)} · odpowiedzi: ${r.forum_posts[0]?.count ?? 0}</span></li>`).join('') || '<li class="meta">Jeszcze nic tu nie ma.</li>'}</ul></div>`;
+  onSubmit(nt, async f => {
+    const image_url = await uploadImage(fileOf(f));
+    const row = check(await sb.from('forum_threads').insert({ title: f.get('title').trim(), body: f.get('body'), image_url, created_by: me.id }).select('id').single());
+    location.href = '?t=' + row.id;
+  });
+}
+
+async function thread() {
+  backBtn.href = 'forum.html';
+  const t = check(await sb.from('forum_threads').select('*, author:profiles(nick)').eq('id', T).maybeSingle());
+  if (!t) { app.innerHTML = '<div class="card empty">Nie ma takiego wątku.</div>'; return; }
+  const posts = check(await sb.from('forum_posts').select('*, author:profiles(nick)').eq('thread_id', T).order('created_at'));
+  const del = (kind, r) => canDel(r) ? ` · <a href="#" data-del="${kind}:${r.id}">usuń</a>` : '';
+  app.innerHTML = `
+    <article class="card post"><h2>${esc(t.title)}</h2><p class="meta">${esc(t.author?.nick ?? '—')} · ${fmtDate(t.created_at)}${del('forum_threads', t)}</p>
+      <div>${richText(t.body)}</div>${img(t.image_url)}</article>
+    ${posts.map(p => `<article class="card post"><p class="meta">${esc(p.author?.nick ?? '—')} · ${fmtDate(p.created_at)}${del('forum_posts', p)}</p><div>${richText(p.body)}</div>${img(p.image_url)}</article>`).join('')}
+    ${postForm('rp', false)}`;
+  onSubmit(rp, async f => {
+    const image_url = await uploadImage(fileOf(f));
+    check(await sb.from('forum_posts').insert({ thread_id: t.id, body: f.get('body'), image_url, created_by: me.id }));
+    location.reload();
+  });
+  app.querySelectorAll('[data-del]').forEach(a => a.onclick = async e => {
+    e.preventDefault();
+    const [table, id] = a.dataset.del.split(':');
+    if (!confirm(table === 'forum_threads' ? 'Usunąć cały wątek ze wszystkimi odpowiedziami?' : 'Usunąć tę odpowiedź?')) return;
+    check(await sb.from(table).delete().eq('id', id));
+    table === 'forum_threads' ? location.href = 'forum.html' : location.reload();
+  });
+}
+</script>
+</body>
+</html>

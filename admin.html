@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin</title>
+<link rel="stylesheet" href="style.css">
+<style> label.chk { display: flex; gap: 8px; align-items: center; } label.chk input { width: auto; } </style>
+</head>
+<body>
+<header class="bar"><a class="back" href="index.html" aria-label="Wróć">◀</a><h1>Admin</h1></header>
+<main id="app"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="common.js"></script>
+<script type="module">
+const me = await requireUser();
+if (!me.is_admin) location.replace('index.html');
+else if (!needsDb(app)) await load();
+
+async function load() {
+  const users = check(await sb.from('profiles').select('*').order('nick'));
+  app.innerHTML = `
+    <form class="card" id="nu"><h2>Nowe konto</h2>
+      <input name="nick" placeholder="Nick (3–20 znaków: a-z, 0-9, _ . -)" required>
+      <input name="password" type="text" placeholder="Hasło (min. 8 znaków)" required minlength="8" autocomplete="new-password">
+      <label class="chk"><input type="checkbox" name="admin"> Administrator</label>
+      <div class="err"></div><button>Utwórz konto</button></form>
+    <div class="card"><h2>Konta (${users.length})</h2><ul class="list">${users.map(u => `
+      <li class="row" style="justify-content:space-between"><span><b>${esc(u.nick)}</b> ${u.is_admin ? '<span class="meta">· admin</span>' : ''}</span>
+      ${u.id === me.id ? '<span class="meta">to Ty</span>' : `<button class="danger" data-del="${u.id}" data-nick="${esc(u.nick)}">Odbierz dostęp</button>`}</li>`).join('')}</ul></div>`;
+
+  onSubmit(nu, async f => {
+    const nick = f.get('nick').trim().toLowerCase();
+    if (!NICK_RE.test(nick)) throw new Error('Nick: 3–20 znaków, tylko a-z, 0-9, _ . -');
+    // drugi klient bez zapisywania sesji, żeby admin nie został wylogowany
+    const tmp = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false, storageKey: 'tmp-signup' } });
+    const { data, error } = await tmp.auth.signUp({ email: nickToEmail(nick), password: f.get('password') });
+    if (error) throw error;
+    if (!data.user?.identities?.length) throw new Error('Taki nick już istnieje');
+    check(await sb.from('profiles').insert({ id: data.user.id, nick, is_admin: f.get('admin') === 'on' }));
+    alert(`Konto „${nick}” utworzone. Przekaż nick i hasło użytkownikowi.`);
+    await load();
+  });
+  app.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    if (!confirm(`Odebrać dostęp użytkownikowi „${b.dataset.nick}”? Jego wpisy zostaną, ale bez autora.`)) return;
+    check(await sb.from('profiles').delete().eq('id', b.dataset.del));
+    await load();
+  });
+}
+</script>
+</body>
+</html>

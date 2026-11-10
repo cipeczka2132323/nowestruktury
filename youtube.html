@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YouTube</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  html, body { height: 100%; overflow: hidden; }
+  body::before { z-index: 1; pointer-events: none; }
+  #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #css3d { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
+  #css3d .tvscreen { pointer-events: auto; }
+  .bar { position: fixed; left: 0; right: 0; top: 0; z-index: 5; }
+  /* ekran telewizora (DOM w 3D, żeby iframe z YouTube działał) */
+  .tvscreen { width: 960px; height: 712px; background: #020802; overflow: hidden; position: relative; border-radius: 60px / 48px; }
+  .tvscreen iframe, .tvscreen .ph { width: 100%; height: 100%; border: 0; display: block; }
+  .tvscreen.crt { animation: crt .7s cubic-bezier(.2,.8,.3,1); }
+  @keyframes crt { 0% { transform: scale(1, .004); filter: brightness(6); } 35% { transform: scale(1, .02); filter: brightness(4); } 60% { transform: scale(1, 1.05); filter: brightness(1.6); } 100% { transform: none; filter: none; } }
+  .power { margin-top: 34px; font-size: 26px; padding: 18px 44px; }
+  .nosig[hidden] { display: none; }
+  .tvscreen .glare { position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+    background: radial-gradient(ellipse 80% 60% at 30% 15%, rgba(255,255,255,.14), rgba(255,255,255,0) 60%), radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) 60%, rgba(0,0,0,.55) 100%);
+    box-shadow: inset 0 0 60px rgba(0,0,0,.85); }
+  .nosig { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: #9cff5a; font: 700 54px var(--font-ui); letter-spacing: .1em;
+    text-shadow: 0 0 20px #5f0; background: repeating-linear-gradient(0deg, rgba(120,255,80,.06) 0 2px, transparent 2px 5px), radial-gradient(circle, #0d3a07, #020802 75%); }
+  .nosig small { display: block; font-size: 24px; opacity: .7; margin-top: 14px; letter-spacing: .3em; }
+  .nosig::after { content: ""; position: absolute; inset: -20px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E");
+    mix-blend-mode: screen; animation: noise .25s steps(4) infinite; opacity: .5; }
+  @keyframes noise { 25% { transform: translate(-8px, 6px); } 50% { transform: translate(6px, -4px); } 75% { transform: translate(-4px, -8px); } }
+  /* pasek z linkiem */
+  #f { position: fixed; z-index: 6; left: 50%; bottom: 76px; transform: translateX(-50%); width: min(720px, calc(100vw - 32px)); margin: 0; animation: none; }
+  #f .row { flex-wrap: nowrap; }
+  #f input { flex: 1; min-width: 0; }
+  #f button { white-space: nowrap; }
+  /* kolejka */
+  #queue { position: fixed; z-index: 6; right: 18px; top: 84px; width: 340px; max-height: calc(100vh - 250px); display: flex; flex-direction: column; margin: 0; }
+  #queue .now { padding: 10px 12px; margin-bottom: 10px; background: linear-gradient(90deg, rgba(230,255,70,.92), rgba(150,230,30,.8)); color: #0b2a05;
+    clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%); }
+  #queue .now small { font: 700 10px var(--font-ui); letter-spacing: .2em; display: block; opacity: .75; }
+  #queue .now b { display: block; font-size: 15px; line-height: 1.25; margin: 2px 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  #queue .now span { font-size: 12px; }
+  #queue .head { display: flex; justify-content: space-between; align-items: center; }
+  #skip { padding: 7px 14px; font-size: 11px; }
+  #qlist { overflow: auto; min-height: 0; }
+  #qlist li { display: flex; gap: 10px; align-items: center; padding: 6px 8px 6px 6px; }
+  #qlist img { width: 72px; aspect-ratio: 16/9; object-fit: cover; flex: none; border: 1px solid var(--line-dim); }
+  #qlist li div { flex: 1; min-width: 0; font-size: 13px; }
+  #qlist li b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #qlist .x { padding: 4px 9px; font-size: 12px; background: rgba(120,30,10,.7); }
+  @media (max-width: 900px) {
+    #queue { left: 16px; right: 16px; width: auto; top: auto; bottom: 186px; max-height: 26vh; }
+    #f { bottom: 70px; } #f .row { flex-wrap: wrap; } #f input { flex-basis: 100%; }
+  }
+</style>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }</script>
+</head>
+<body>
+<canvas id="scene" aria-hidden="true"></canvas>
+<div id="css3d"></div>
+<header class="bar"><a class="back" href="index.html" aria-label="Wróć">◀</a><h1>YouTube</h1></header>
+<aside class="card" id="queue" aria-label="Kolejka">
+  <div class="head"><h2>Teraz leci</h2><button type="button" id="skip" hidden>Pomiń ▶▶</button></div>
+  <div class="now"><small>WSPÓLNY TV</small><b id="nowTitle">Nic nie leci</b><span id="nowBy"></span></div>
+  <h2>Kolejka</h2>
+  <ul class="list" id="qlist"></ul>
+</aside>
+<form class="card" id="f">
+  <div class="row"><input id="url" placeholder="Wklej link do filmu z YouTube" required><button type="submit">Do kolejki</button><button type="button" id="playNow">Puść teraz</button></div>
+  <div class="err"></div>
+</form>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="common.js"></script>
+<script type="module" src="tv.js"></script>
+</body>
+</html>

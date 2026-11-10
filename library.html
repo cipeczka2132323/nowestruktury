@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Biblioteka Bro</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+  .tile { display: flex; flex-direction: column; background: linear-gradient(170deg, rgba(20,70,12,.95), rgba(4,24,4,.95)); border: 1px solid var(--line-dim);
+    clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px); transition: .15s; animation: panelIn .5s backwards; }
+  .tile:hover { border-color: var(--hi); box-shadow: inset 0 0 24px rgba(200,255,60,.25); }
+  .tile a.cover { display: block; aspect-ratio: 16/10; background: radial-gradient(circle, #2f7a14, #062006); }
+  .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tile div { padding: 10px 12px; flex: 1; }
+  .tile b { display: block; }
+  .tile p { margin: 4px 0; font-size: 14px; }
+</style>
+</head>
+<body>
+<header class="bar"><a class="back" href="index.html" aria-label="Wróć">◀</a><h1>Biblioteka Bro</h1></header>
+<main id="app"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="common.js"></script>
+<script type="module">
+const me = await requireUser();
+if (!needsDb(app)) await load();
+
+async function load() {
+  const rows = check(await sb.from('library_links').select('*, author:profiles(nick)').order('created_at', { ascending: false }));
+  app.innerHTML = `
+    <form class="card" id="add"><h2>Dodaj stronę</h2>
+      <input name="url" type="url" placeholder="https://..." required>
+      <input name="title" placeholder="Nazwa" required maxlength="120">
+      <input name="description" placeholder="Krótki opis (opcjonalnie)" maxlength="300">
+      <label class="meta">Zdjęcie (max 5 MB): <input type="file" name="image" accept="image/*"></label>
+      <div class="err"></div><button>Dodaj</button></form>
+    <div class="grid">${rows.map(r => `<div class="tile">
+      <a class="cover" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${r.image_url ? `<img src="${esc(safeUrl(r.image_url))}" alt="" loading="lazy">` : ''}</a>
+      <div><b><a href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}</a></b>
+        <p>${esc(r.description)}</p>
+        <span class="meta">${esc(r.author?.nick ?? '—')}${r.created_by === me.id || me.is_admin ? ` · <a href="#" data-del="${r.id}">usuń</a>` : ''}</span></div>
+    </div>`).join('') || '<div class="card empty">Biblioteka jest pusta.</div>'}</div>`;
+  onSubmit(add, async f => {
+    const url = f.get('url').trim();
+    if (!/^https?:\/\//i.test(url)) throw new Error('Link musi zaczynać się od http:// lub https://');
+    const file = f.get('image');
+    const image_url = await uploadImage(file && file.size ? file : null);
+    check(await sb.from('library_links').insert({ url, title: f.get('title').trim(), description: f.get('description').trim(), image_url, created_by: me.id }));
+    await load();
+  });
+  app.querySelectorAll('[data-del]').forEach(a => a.onclick = async e => {
+    e.preventDefault();
+    if (!confirm('Usunąć ten link?')) return;
+    check(await sb.from('library_links').delete().eq('id', a.dataset.del));
+    await load();
+  });
+}
+</script>
+</body>
+</html>

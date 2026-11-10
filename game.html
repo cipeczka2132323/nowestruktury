@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lobby</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: "Segoe UI", system-ui, sans-serif; }
+  canvas { display: block; }
+  #vel { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); color: rgba(255,255,255,.75);
+    font: 600 13px/1 Consolas, monospace; text-shadow: 0 1px 2px #000; pointer-events: none; }
+  #start { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(0,10,40,.7); color: #fff; cursor: pointer; text-align: center; }
+  #start h1 { font-weight: 300; font-size: 40px; margin: 0 0 10px; }
+  #start p { opacity: .8; margin: 4px; }
+  #start a { color: #8ec5ff; }
+  #demo { position: fixed; left: 50%; top: 8px; transform: translateX(-50%); background: #fc0; font-size: 12px; padding: 4px 10px; border-radius: 99px; }
+</style>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }</script>
+</head>
+<body>
+<div id="vel">0</div>
+<div id="start">
+  <div>
+    <h1>Lobby</h1>
+    <p><b>Kliknij, aby grać</b></p>
+    <p>WASD – ruch · Spacja (trzymaj) – skok / bunny hop · Mysz – rozglądanie</p>
+    <p>E – podnieś · Lewy przycisk / Q – rzuć · Esc – pauza</p>
+    <p style="margin-top:14px"><a href="index.html" onclick="event.stopPropagation()">◀ Wróć do menu</a></p>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="common.js"></script>
+<script type="module" src="game.js"></script>
+</body>
+</html>

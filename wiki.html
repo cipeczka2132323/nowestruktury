@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wikipedia Bro</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .wiki-text h2 { font-size: 20px; border-bottom: 1px solid #dde3ee; padding-bottom: 4px; }
+  .wiki-text a.missing { color: #c33; }
+  textarea[name=content] { min-height: 360px; font-family: Consolas, monospace; font-size: 14px; }
+</style>
+</head>
+<body>
+<header class="bar"><a class="back" id="backBtn" href="index.html" aria-label="Wróć">◀</a><h1 id="ttl">Wikipedia Bro</h1></header>
+<main id="app"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="common.js"></script>
+<script type="module">
+const me = await requireUser();
+const Q = new URLSearchParams(location.search), W = Q.get('w'), P = Q.get('p'), EDIT = Q.has('edit');
+const url = (w, p, edit) => '?w=' + w + (p != null ? '&p=' + encodeURIComponent(p) : '') + (edit ? '&edit' : '');
+const slugify = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ł/g, 'l').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+// [[Tytuł]] → link do strony tej wiki, "== Nagłówek ==" → nagłówek
+const render = (text, w) => richText(text)
+  .replace(/\[\[([^\]]+)\]\]/g, (m, t) => `<a href="${url(w, unesc(t))}">${t}</a>`)
+  .replace(/(^|<br>)== (.+?) ==(?=<br>|$)/g, '$1<h2>$2</h2>');
+
+if (!needsDb(app)) {
+  if (!W) await wikiList();
+  else {
+    const wiki = check(await sb.from('wikis').select('*').eq('slug', W).maybeSingle());
+    if (!wiki) app.innerHTML = '<div class="card empty">Nie ma takiej wiki.</div>';
+    else {
+      ttl.textContent = wiki.name; backBtn.href = P == null ? 'wiki.html' : url(W);
+      if (P == null) await wikiHome(wiki); else if (EDIT) await editPage(wiki); else await viewPage(wiki);
+    }
+  }
+}
+
+async function wikiList() {
+  const wikis = check(await sb.from('wikis').select('slug,name').order('name'));
+  app.innerHTML = `
+    <div class="card"><h2>Wszystkie wiki</h2><ul class="list">${wikis.map(w => `<li><a href="${url(w.slug)}">${esc(w.name)}</a></li>`).join('') || '<li class="meta">Brak</li>'}</ul></div>
+    <form class="card" id="nw"><h2>Załóż nową wiki</h2><input name="name" placeholder="Nazwa, np. Noran Wiki" required maxlength="60"><div class="err"></div><button>Utwórz</button></form>`;
+  onSubmit(nw, async f => {
+    const name = f.get('name').trim(), slug = slugify(name);
+    if (slug.length < 2) throw new Error('Za krótka nazwa');
+    check(await sb.from('wikis').insert({ slug, name, created_by: me.id }));
+    location.href = url(slug);
+  });
+}
+
+async function wikiHome(wiki) {
+  const pages = check(await sb.from('wiki_pages').select('title,updated_at').eq('wiki_id', wiki.id).order('title'));
+  app.innerHTML = `
+    <div class="card"><h2>Strony</h2><ul class="list">${pages.map(p => `<li><a href="${url(W, p.title)}">${esc(p.title)}</a> <span class="meta">· ${fmtDate(p.updated_at)}</span></li>`).join('') || '<li class="meta">Ta wiki jest pusta.</li>'}</ul></div>
+    <form class="card" id="np"><h2>Nowa strona</h2><input name="title" placeholder="Tytuł strony" required maxlength="120"><button>Utwórz</button></form>
+    ${me.is_admin ? '<div class="card"><button class="danger" id="delWiki">Usuń całą wiki</button></div>' : ''}`;
+  onSubmit(np, async f => { location.href = url(W, f.get('title').trim(), true); });
+  if (me.is_admin) delWiki.onclick = async () => {
+    if (!confirm(`Usunąć „${wiki.name}” razem ze wszystkimi stronami? Tego nie da się cofnąć.`)) return;
+    check(await sb.from('wikis').delete().eq('id', wiki.id)); location.href = 'wiki.html';
+  };
+}
+
+async function getPage(wiki) {
+  return check(await sb.from('wiki_pages').select('*, editor:profiles(nick)').eq('wiki_id', wiki.id).eq('title', P).maybeSingle());
+}
+
+async function viewPage(wiki) {
+  const page = await getPage(wiki);
+  if (!page) { app.innerHTML = `<div class="card empty"><h2>${esc(P)}</h2>Ta strona jeszcze nie istnieje.<br><br><a class="btn" href="${url(W, P, true)}">Utwórz ją</a></div>`; return; }
+  app.innerHTML = `<article class="card">
+    <h2>${esc(page.title)}</h2>
+    <div class="wiki-text">${render(page.content, W) || '<span class="meta">Pusta strona.</span>'}</div>
+    <p class="meta">Ostatnia zmiana: ${esc(page.editor?.nick ?? '—')}, ${fmtDate(page.updated_at)}</p>
+    <div class="row"><a class="btn" href="${url(W, P, true)}">Edytuj</a>${me.is_admin ? '<button class="danger" id="delPage">Usuń stronę</button>' : ''}</div>
+  </article>`;
+  if (me.is_admin) delPage.onclick = async () => {
+    if (!confirm('Usunąć tę stronę? Tego nie da się cofnąć.')) return;
+    check(await sb.from('wiki_pages').delete().eq('id', page.id)); location.href = url(W);
+  };
+}
+
+async function editPage(wiki) {
+  const page = await getPage(wiki);
+  app.innerHTML = `<form class="card" id="ed">
+    <h2>Edycja: ${esc(P)}</h2>
+    <textarea name="content" placeholder="Treść strony">${esc(page?.content ?? '')}</textarea>
+    <p class="meta">[[Tytuł]] – link do innej strony tej wiki · == Nagłówek == – nagłówek · linki http:// są klikalne</p>
+    <div class="err"></div>
+    <div class="row"><button>Zapisz</button><a class="btn ghost" href="${url(W, P)}">Anuluj</a></div>
+  </form>`;
+  onSubmit(ed, async f => {
+    check(await sb.from('wiki_pages').upsert(
+      { wiki_id: wiki.id, title: P, content: f.get('content'), updated_by: me.id, updated_at: new Date().toISOString() },
+      { onConflict: 'wiki_id,title' }));
+    location.href = url(W, P);
+  });
+}
+</script>
+</body>
+</html>
